@@ -48,6 +48,7 @@ VAR 'Time based Variables
   byte year  
 VAR 'Interface based variables
   byte brightness
+  byte prev_brightness
   byte mode
   byte page
   byte PreviousMode
@@ -75,57 +76,29 @@ PUB Main
     GetBrightness                     
     if (mode==1)                            'Home-Main       
       DisplayTime
-      if (raspiConnected == 1)
-        GetWeather
-        DisplayWeather
-      else
-        DisplayDate
+      DisplayDate
     elseif (mode == 2 AND page==1)                      'Displays words Set Time and Date
-      led.DrawText5x8(0,0,string("Set"),brightness,2,0)
-      led.DrawText5x8(0,8,string("T.&D."),brightness,2,0)       
+      led.DrawText5x8(0,0,string("Set"),1,2,0)
+      led.DrawText5x8(0,8,string("Time"),1,2,0)       
     elseif (mode == 2 AND page==2)                                  'Set Method
-      SetTime    
-PUB GetWeather | i, errorFlag
-  serial.RxFlush  
-  serial.Str(string("weathe"))  
-  pst.Str(string("Transmitted: weathe"))
-  pst.NewLine
-  repeat i from 0 to 5
-    picture_string[i] := serial.Rx
-  repeat i from 0 to 5
-    temp_current[i] := serial.Rx
-  temp_current_num := @temp_current[4]
-  repeat i from 0 to 5
-    temp_high[i] := serial.Rx
-  temp_high_num := @temp_high[4]  
-  repeat i from 0 to 5
-    temp_low[i] := serial.Rx
-  temp_low_num := @temp_low[4]
-  pst.Str(string("Current Temperature: "))
-  pst.Str(@temp_current[4])
-  pst.NewLine
-  pst.Str(string("Today's High: "))
-  pst.Str(@temp_high[4])
-  pst.NewLine
-  pst.Str(string("Today's Low: "))
-  pst.Str(@temp_low[4])
-  pst.NewLine    
-PUB DisplayWeather
-  led.DrawPic(0,11,@weather[1],brightness,5,5)
-  led.DrawTwoNum(6,11, temp_current_num,brightness,1,0,3,5)
-  led.DrawTwoNum(15,11, temp_high_num,brightness,3,0,3,5)
-  led.DrawText(22,11, string("/") ,brightness,1,0,3,5) 
-  led.DrawTwoNum(25,11, temp_low_num,brightness,7,0,3,5)
+      SetTime
 PUB DisplayDate 'Displays the date and the meridiem
   if (meridiem == 0)
     led.DrawText(25,11, string("AM"),brightness,7,0,3,5)  
   else
     led.DrawText(25,11, string("PM"),brightness,7,0,3,5)
-  led.DrawTwoNum(0,11, month,brightness,3,0,3,5)
-  led.SetPixel(7,13,led.GetColor(1,brightness))
-  led.DrawTwoNum(8,11, day,brightness,7,0,3,5)
-  led.SetPixel(15,13,led.GetColor(1,brightness))
-  led.DrawTwoNum(16,11, year,brightness,3,0,3,5)
+  if brightness == 1
+    led.DrawTwoNum(0,11, month,brightness,3,0,3,5)
+    led.SetPixel(7,13,led.GetColor(1,brightness))
+    led.DrawTwoNum(8,11, day,brightness,7,0,3,5)
+    led.SetPixel(15,13,led.GetColor(1,brightness))
+    led.DrawTwoNum(16,11, year,brightness,3,0,3,5)
+  else
+    led.DrawTwoNum(0,11, month,brightness,0,0,3,5)
+    led.SetPixel(7,13,led.GetColor(0,brightness))
+    led.DrawTwoNum(8,11, day,brightness,0,0,3,5)
+    led.SetPixel(15,13,led.GetColor(0,brightness))
+    led.DrawTwoNum(16,11, year,brightness,0,0,3,5)
 PUB Init  
   balance:=led.RGB(Bal_Red,Bal_Green,Bal_Blue)  'set color balance
   Intensity:=Init_Intensity   'set intensity  
@@ -160,13 +133,16 @@ PUB GetBrightness | time
     repeat 22
       waitcnt(clkfreq/60 + cnt)        
     time := (phsa - 624) #> 0
-    if (time >= 1400000)
-        brightness := 0
-        outa[BUTTON_LIGHT] := 0 'Turn Button Light Off
-    else
-        brightness := 1
-        outa[BUTTON_LIGHT] := 1 'Turn Button Light On
-    'brightness:=1 'brightness overide for testing            
+    if (time >= 3000000)
+      brightness := 0
+      outa[BUTTON_LIGHT] := 0 'Turn Button Light Off
+    elseif (time < 1000000)
+      brightness := 1
+      outa[BUTTON_LIGHT] := 1 'Turn Button Light On
+    'else no change 
+    if NOT(brightness == prev_brightness)
+      led.SetAllPixels(0)
+    prev_brightness := brightness             
 PUB CheckMode      
   if (ina[LEFT_PIN]==1) 'left
     mode--
@@ -195,7 +171,7 @@ PUB CheckMode
 PUB SetTime | select
     select:=1 
   repeat while ina[ENTER_PIN]==0
-    'GetBrightness   
+    brightness := 1 
     if (ina[LEFT_PIN]==1) 'left
       select--
       led.DrawRect (0,5,6,5,0,brightness)
@@ -263,8 +239,7 @@ PUB SetTime | select
   RTC.SetDate(day,month,year)                               
   page:=1
   mode:=1
-  led.SetAllPixels(led#black) 
-       
+  led.SetAllPixels(led#black)  
 PUB GetTime
   tempsecond := RTC.ReadTimeReg(0)                          'Read current second
   minute := RTC.ReadTimeReg(1)
@@ -305,28 +280,14 @@ PUB ProcessTime
 PUB DisplayTime
   if NOT(tempsecond == second)
     second := tempsecond
- 
     if hourstandard < 10
       led.DrawChar(0,0,string("0"),brightness,0,0,6,10)  
-      led.DrawChar(7,0,hourstandard,brightness,7,0,6,10)      
+      led.DrawChar(7,0,hourstandard,brightness,7,0,6,10) 
     else
       led.DrawTwoNum(0,0,hourstandard,brightness,7,0,6,10)
     led.DrawChar(15,0,":",brightness,1,0,2,10)
-    led.DrawTwoNum(19,0,minute,brightness,3,0,6,10)        
-    {{if (meridiem == 0)
-      led.DrawText3x5(25,11,STRING("AM"),color3,led#black)
-    else
-      led.DrawText3x5(25,11,STRING("PM"),color3,led#black) }}
-{{PUB piRead | i, errorFlag   
-  i:=0
-  errorFlag := 0
-  repeat i from 0 to 5
-    fullstring[i] := serial.Rx
-  serial.RxFlush             
-PUB piWrite}}
+    led.DrawTwoNum(19,0,minute,brightness,3,0,6,10) 
 PUB CompareBuffers(pointer0, pointer1, size)
   repeat size
     if byte[pointer0] <> byte[pointer1]
       result++
-DAT
-weather byte "clear1","pcloud","mcloud","thunde","herain","lirain","snowy1",0
